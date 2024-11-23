@@ -1,20 +1,14 @@
 #![feature(mpmc_channel)]
 
-pub mod error {
-    use thiserror::Error;
-
-    #[derive(Debug, Error)]
-    pub enum Error {
-        #[error("IO error: {0}")]
-        IoError(#[from] std::io::Error),
-    }
-}
+pub mod args;
+pub mod error;
 
 pub mod aoc {
     use std::{
         fmt::Display,
         fs::File,
         io::Read,
+        num::NonZero,
         path::PathBuf,
         sync::mpmc::{channel, Receiver, Sender},
         thread::{self, JoinHandle},
@@ -22,7 +16,7 @@ pub mod aoc {
 
     use crate::error::Error;
 
-    type Solution = dyn Send + Sync + Fn(&[u8]) -> Result<u64, Error>;
+    type Solution = dyn Send + Sync + Fn(&[u8]) -> Result<i64, Error>;
 
     #[derive(Debug, Copy, Clone)]
     pub struct PartId {
@@ -42,7 +36,7 @@ pub mod aoc {
     #[derive(Debug, Copy, Clone)]
     pub struct Answer {
         pub id: PartId,
-        pub value: u64,
+        pub value: i64,
     }
 
     impl Display for Answer {
@@ -68,18 +62,19 @@ pub mod aoc {
     }
 
     pub struct Executor {
-        jh: Vec<JoinHandle<Result<(), Error>>>,
         pub part_tx: Sender<Part>,
         pub ans_rx: Receiver<Result<Answer, Error>>,
+        jh: Vec<JoinHandle<Result<(), Error>>>,
     }
 
     impl Executor {
-        pub fn new(jobs: u16, input_root_path: PathBuf) -> Result<Self, Error> {
+        pub fn new(jobs: NonZero<usize>, input_root_path: PathBuf) -> Result<Self, Error> {
             let (part_tx, part_rx) = channel::<Part>();
             let (ans_tx, ans_rx) = channel::<Result<Answer, Error>>();
             let mut jh = Vec::new();
 
-            for i in 0..jobs {
+            for i in 0..jobs.into() {
+                println!("Creating worker {i}");
                 let input_root_path = input_root_path.clone();
                 let part_rx = part_rx.clone();
                 let ans_tx = ans_tx.clone();
@@ -90,19 +85,52 @@ pub mod aoc {
                             let part_rx = part_rx;
                             let ans_tx = ans_tx;
                             let input_root_path = input_root_path;
+                            let thread_name = std::thread::current();
+                            let thread_name = thread_name.name().unwrap_or_default();
 
                             while let Ok(x) = part_rx.recv() {
+
+                                println!("{}: Received {}/{}-{}", thread_name, x.id.year, x.id.day, x.id.part);
                                 let mut input: Vec<u8> = Vec::new();
-                                let mut file = File::open(
-                                    input_root_path
+                                let path = input_root_path
                                         .join(x.id.year.to_string())
-                                        .join(x.id.day.to_string()),
-                                )?;
+                                        .join(x.id.day.to_string());
 
-                                let _ = file.read_to_end(&mut input);
+                                println!("{}: Opening file {}", thread_name, path.as_path().display());
+                                let mut file = match File::open(
+                                    &path
+                                ) {
+                                    Ok(f) => f,
+                                    Err(e) => {
+                                        println!("{}: Error - {}", thread_name, e);
+                                        return Err(e.into());
+                                    }
+                                };
 
-                                let _ = ans_tx.send(x.run(&input));
+                                println!("{}: Reading file {}", thread_name, path.as_path().display());
+
+                                match file.read_to_end(&mut input) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        println!("{}: Error - {}", thread_name, e);
+                                        return Err(e.into());
+                                    }
+                                };
+
+
+                                println!("{}: Running {}/{}-{}", thread_name, x.id.year, x.id.day, x.id.part);
+                                let ans = x.run(&input);
+                                println!("{}: Answer {}/{}-{} => {}", thread_name, x.id.year, x.id.day, x.id.part, ans?.value);
+                                match ans_tx.send(x.run(&input)) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        println!("{}: Error - {}", thread_name, e);
+                                        return Err(Error::SendChannelError(e.to_string()));
+                                    }
+                                };
+                                println!("{}: Completed {}/{}-{}", thread_name, x.id.year, x.id.day, x.id.part);
                             }
+                           println!("{}: Closing", thread_name);
                             Ok(())
                         })?,
                 )
@@ -124,51 +152,180 @@ pub mod aoc {
             Ok(())
         }
     }
-}
 
-pub mod args {
-    use clap::Parser;
+    #[cfg(test)]
+    mod unit {
+        use crate::aoc::Part;
+        #[test]
+        fn part_run_functions() -> anyhow::Result<()> {
+            assert_eq!(
+                Part::new(2024, 1, 1, &|input: &[u8]| Ok({
+                    let mut accum = 0i64;
+                    for i in input {
+                        accum += *i as i64;
+                    }
+                    accum
+                }))
+                .run(&[1, 1])?
+                .value,
+                2
+            );
 
-    #[derive(Debug, Parser)]
-    pub struct ArgParse {
-        ///The list of years for which challenges should be run and reported. If no other options
-        ///are provided, all parts of each day of the provided years will be run and reported.
-        #[arg(short = 'y', long = "year")]
-        years: Option<Vec<u8>>,
-
-        ///The list of days for which challenges should be run and reported. If no year is provided, the
-        ///latest year is assumed. If no part is provided, all parts will be run and reported.
-        #[arg(short = 'd', long = "day")]
-        days: Option<Vec<u8>>,
-
-        /// The list of parts for which challenges should be run and reported.
-        #[arg(short = 'p', long = "part")]
-        parts: Option<Vec<u8>>,
-
-        /// The number of jobs to run in parallel. Defaults to
-        /// [`std::thread::available_parallelism`]
-        #[arg(short = 'j', long = "jobs")]
-        jobs: Option<u16>,
+            Ok(())
+        }
     }
 }
 
-use crate::{aoc::Part, args::ArgParse};
+use crate::{aoc::Part, args::ArgParse, error::Error};
+use aoc::Executor;
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
-    let _args = ArgParse::parse();
+    let args = ArgParse::parse();
 
-    println!(
-        "1+1={}",
-        Part::new(2024, 1, 1, &|input: &[u8]| Ok({
-            let mut accum = 0u64;
-            for i in input {
-                accum += *i as u64;
-            }
-            accum
-        }))
-        .run(&[1, 1])?
-    );
+    let input_root_path = args.input;
+
+    let exec: Executor = Executor::new(std::thread::available_parallelism()?, input_root_path)?;
+
+    let part_tx = exec.part_tx.clone();
+    let ans_rx = exec.ans_rx.clone();
+
+    let part0 = Part::new(2023, 1, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part1 = Part::new(2023, 2, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part2 = Part::new(2023, 3, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part3 = Part::new(2023, 4, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part4 = Part::new(2023, 5, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part5 = Part::new(2023, 6, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part6 = Part::new(2023, 7, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part7 = Part::new(2023, 8, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+    let part8 = Part::new(2023, 9, 1, &|input| {
+        println!("Input: {input:?}");
+        let mut accum = 0i64;
+        for x in input {
+            accum += match x {
+                b'+' => 1,
+                b'-' => -1,
+                b'\n' => 0,
+                _ => 0,
+            };
+        }
+        Ok(accum)
+    });
+
+    part_tx.send(part0)?;
+    part_tx.send(part1)?;
+    part_tx.send(part2)?;
+    part_tx.send(part3)?;
+    part_tx.send(part4)?;
+    part_tx.send(part5)?;
+    part_tx.send(part6)?;
+    part_tx.send(part7)?;
+    part_tx.send(part8)?;
+
+    while let Ok(ans) = ans_rx.recv()? {
+        println!(
+            "{}/{}-{}: {}",
+            ans.id.year, ans.id.day, ans.id.part, ans.value
+        );
+    }
+
+    exec.join()?;
 
     Ok(())
 }
