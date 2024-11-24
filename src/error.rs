@@ -9,11 +9,10 @@ pub enum Error {
     SendChannelError(String),
 
     #[error("part error ({year},{day},{part}): {desc}")]
-    PartError{
+    PartError {
         year: u16,
         day: u8,
         part: u8,
         desc: String,
-    }
+    },
 }
-

@@ -25,5 +25,8 @@ pub struct ArgParse {
     /// The root path of the inputs.
     #[arg(short = 'i', long = "input")]
     pub input: PathBuf,
-}
 
+    /// The file in which to write logs
+    #[arg(short = 'l', long = "log")]
+    pub log: Option<PathBuf>,
+}
