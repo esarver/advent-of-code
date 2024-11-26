@@ -5,9 +5,45 @@ pub mod args;
 pub mod error;
 pub mod log;
 
+pub mod years {
+    pub mod _2023 {
+        pub mod day01 {
+            use crate::error::Error;
+
+            pub fn part1(input: &[u8]) -> Result<i64, Error> {
+                let mut accum: i64 = 0;
+                for line in String::from_utf8(input.to_vec()).unwrap().lines() {
+                    let numbers: Vec<char> = line.chars().filter(|e| e.is_numeric()).collect();
+                    let (first, last) = (numbers.first().unwrap(), numbers.last().unwrap());
+                    let number = (first.to_string().parse::<i64>().unwrap() * 10) + last.to_string().parse::<i64>().unwrap();
+                    accum += number;
+                }
+
+                Ok(accum)
+
+            }
+
+            #[cfg(test)]
+            mod unit {
+                use super::part1;
+
+                #[test]
+                fn part1_test() {
+                    let input = br"1abc2
+pqr3stu8vwx
+a1b2c3d4e5f
+treb7uchet";
+                    assert_eq!(part1(input).unwrap(), 142);
+                }
+            }
+        }
+    }
+}
+
 use crate::{aoc::Part, args::ArgParse, log::init_logger};
 use aoc::Executor;
 use clap::Parser;
+use years::_2023;
 
 fn main() -> anyhow::Result<()> {
     let args = ArgParse::parse();
@@ -23,124 +59,14 @@ fn main() -> anyhow::Result<()> {
     let part_tx = exec.part_tx.clone();
     let ans_rx = exec.ans_rx.clone();
 
-    let part0 = Part::new(2023, 1, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part1 = Part::new(2023, 2, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part2 = Part::new(2023, 3, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part3 = Part::new(2023, 4, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part4 = Part::new(2023, 5, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part5 = Part::new(2023, 6, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part6 = Part::new(2023, 7, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part7 = Part::new(2023, 8, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
-    let part8 = Part::new(2023, 9, 1, &|input| {
-        let mut accum = 0i64;
-        for x in input {
-            accum += match x {
-                b'+' => 1,
-                b'-' => -1,
-                b'\n' => 0,
-                _ => 0,
-            };
-        }
-        Ok(accum)
-    });
+    let _2023_part1 = Part::new(
+        2023,
+        1,
+        1,
+        &_2023::day01::part1
+    );
 
-    part_tx.send(part0)?;
-    part_tx.send(part1)?;
-    part_tx.send(part2)?;
-    part_tx.send(part3)?;
-    part_tx.send(part4)?;
-    part_tx.send(part5)?;
-    part_tx.send(part6)?;
-    part_tx.send(part7)?;
-    part_tx.send(part8)?;
+    part_tx.send(_2023_part1)?;
 
     while let Ok(ans) = ans_rx.recv()? {
         println!(
